@@ -1,0 +1,454 @@
+#!/usr/local/bin/perl -w
+
+# Copyright 2001 by Olsen & Associates AG, Zurich, Switzerland.
+
+# $Id: //depot/main/products/ride2/tools/podgen#3 $
+
+# Original author: Paul Johnson
+# Created:         Tue 09 Jan 2001 10:23:53 am
+
+use strict;
+
+require 5.004_04;
+
+use Getopt::Long;
+
+#
+# Parse and process options.
+#
+
+my $Options =
+{
+    help    => 0,
+    name    => "",
+    version => 0,
+};
+
+die "Bad option" unless
+    GetOptions($Options,                 # store the options in the Options hash
+               qw(
+                   help|h!
+                   name|n=s
+                   version|v!
+                 ));
+
+if ($Options->{help})
+{
+    print "Usage: $0 [-hv] [-n filename] filename or stdin\n";
+    exit;
+}
+
+if ($Options->{version})
+{
+    print '$Id: //depot/main/products/ride2/tools/podgen#3 $', "\n";
+    exit;
+}
+
+#
+# Global variables
+#
+
+my $Package = "";     # Name of the package.
+my @Subs;             # Subroutines found.
+my $Pod = 0;          # Package pod found.
+my $Subroutines = 0;  # Subroutines pod found.
+my $Written = 0;      # Documentaion written.
+
+#
+# Subroutines
+#
+
+sub write_pod
+{
+    my ($pod) = @_;
+    $pod =~ s/^\s*: ?//gm;
+    print $pod;
+}
+
+sub write_documentation
+{
+    #
+    # Check if this documentation stub has already been written.
+    #
+
+    return if $Written;
+
+    #
+    # Get the program type and name.
+    #
+
+    my $type = $Package ? "class" : "program";
+    my $file = $Options->{name} || $Package || $ARGV;
+    $file =~ s|.*/||;
+    $file = "** Unknown **" if $file eq "-";
+
+    #
+    # Write the documentation header if required.
+    #
+
+    unless ($Pod)
+    {
+        write_pod <<"EOF";
+            :
+            : __END__
+            :
+            : =head1 NAME
+            :
+            : $file
+            :
+            : A $type to ...
+            :
+            : =head1 SYNOPSIS
+            :
+EOF
+        write_pod $Package ? "use $file;" : "$file [-Dhv] options ...";
+        write_pod <<"EOF";
+            :
+            :
+            : =head1 DESCRIPTION
+            :
+            : The $file $type implements ...
+            :
+            : =head1 OPTIONS
+            :
+            :  -D            - show debugging information
+            :  -h            - show help
+            :  -v            - show version
+            :  Other options ...
+            :
+            : =head1 SUBROUTINES
+            :
+EOF
+    }
+
+    #
+    # Write out a stub for every subroutine for which we haven't already
+    # seen some documentation.
+    #
+
+    for my $sub (@Subs)
+    {
+        #
+        # See if we've already got documentation for this subroutine
+        #
+
+        next if $sub->{pod};
+
+        #
+        # This is probably a method if the first parameter is called $self
+        # or $this, or if we read $_[0] and don't write to it.  That last
+        # heuristic is a little dodgy, but it errs on the side of allowing
+        # you to delete rather than add documentation.
+        #
+
+        my $method = @{$sub->{params}} &&
+                     $sub->{params}[0] =~ /^(self|this)$/ &&
+                     shift @{$sub->{params}};
+        $method ||= exists $sub->{args} && !$sub->{args}[0];
+
+        #
+        # Constructor trumps method.
+        #
+
+        my $type = $sub->{constructor} ? "constructor"
+                 : $method ? "method"
+                 : "";
+
+        #
+        # Output documentation stub.
+        #
+
+        print "=head2 $sub->{name}", ($type ? " ($type)" : ""), "\n\n";
+        print "Parameters:\n";
+        print map { "    $_\n" }
+                  @{$sub->{params}} ? @{$sub->{params}} : "none";
+        print "\n";
+        if (exists $sub->{args})
+        {
+            print "Arguments:\n";
+            for (0 .. $#{$sub->{args}})
+            {
+                print "    \$_[$_]",
+                      ($sub->{args}[$_] ? " (modified)" : ""),
+                      "\n";
+            }
+            print "\n";
+        }
+        $type ||= "subroutine";
+        print "Insert description of $type here...\n\n";
+    }
+
+    #
+    # Write the documentation trailer if required.
+    #
+
+    unless ($Pod)
+    {
+        write_pod <<"EOF" unless $Package;
+            : =head1 EXAMPLES
+            :
+            : ...
+            :
+            : =head1 ENVIRONMENT
+            :
+            : How the environment can affect execution of $file ...
+            :
+            : =head1 EXIT STATUS
+            :
+            : The following exit values are returned:
+            :
+            : 0   All input files were processed successfully.
+            :
+            : >0  An error occurred.
+            :
+EOF
+        write_pod <<"EOF";
+            : =head1 FILES
+            :
+            : Files used by the $file $type ...
+            :
+            : =head1 SEE ALSO
+            :
+            : Related information ...
+            :
+            : =head1 WARNINGS
+            :
+            : ...
+            :
+            : =head1 NOTES
+            :
+            : ...
+            :
+            : =head1 BUGS
+            :
+            : What?
+            :
+            : =cut
+EOF
+    }
+
+    #
+    # Tidy up in case we have been called on a number of files.
+    #
+
+    $Package = "";
+    @Subs = ();
+    $Pod = 0;
+    $Subroutines = 0;
+
+    #
+    # We don't want to write this again.
+    #
+
+    $Written = 1;
+}
+
+sub main
+{
+    while (<>)
+    {
+        #
+        # Print each lilne as we see it.
+        #
+
+        print;
+        chomp;
+
+        #
+        # Look for the package name.
+        #
+
+        if (/^\s*package\s+([\w:]+)\s*;\s*$/)
+        {
+            $Package = $1;
+        }
+
+        #
+        # Look for a subroutine name.
+        #
+
+        if (/^\s*sub\s+((?!\d)\w+)(\s*\([\$;]*\))?\s*\{?\s*$/)
+        {
+            push @Subs, { name => $1, params => [] };
+        }
+
+        #
+        # Look for shifted parameters.
+        #
+
+        if (/my\s*\$(\w+)\s*=\s*shift\s*(?:;|\|\|)/)
+        {
+            push @{$Subs[-1]{params}}, $1;
+        }
+
+        #
+        # Look for parameters copied from @_.
+        #
+
+        if (my ($p) = /\bmy\s*\(\s*((?:\$\w+\s*,?\s*)+)\)\s*=\s*\@_/)
+        {
+            $p =~ s/(\$|\s)//g;
+            push @{$Subs[-1]{params}}, split /,/, $p;
+        }
+
+        #
+        # Look for operations on @_ - reading and writing.
+        #
+
+        while (@Subs && /(\$_\[\s*\d+\s*\](?:\s*=)?)/g)
+        {
+            #
+            # The check for writing is really not very good.
+            # It fails for $_[0] =~ //; and for $_[0]++; for example.
+            #
+
+            $1 =~ /(\d+)\s*\](\s*=)?/;
+            $Subs[-1]{args}[$1] ||= $2;
+        }
+
+        #
+        # If we're blessing we're probably in a constructor.
+        #
+
+        if (/\bbless\b/)
+        {
+            $Subs[-1]->{constructor} = 1;
+        }
+
+        #
+        # Look for package documentation.
+        #
+
+        if (/^=head1/)
+        {
+            $Pod = 1;
+        }
+
+        #
+        # Look for start of subroutine documentation.
+        #
+
+        if (/^=head1 SUBROUTINES$/)
+        {
+            $Subroutines = 1;
+        }
+
+        #
+        # Write documentation if we are coming out of the subroutine section.
+        #
+
+        elsif ($Subroutines && /^=head1/)
+        {
+            write_documentation;
+            $Subroutines = 0;
+        }
+
+        #
+        # Look for individual subroutine documentation.
+        #
+
+        if (/^=head2 (\w+)(?: \(\w+\))?$/)
+        {
+            if (my ($s) = grep { $_->{name} eq $1 } @Subs)
+            {
+                $s->{pod} = 1;
+            }
+        }
+
+        if (eof)
+        {
+            write_documentation;
+
+            #
+            # We'll be moving on to a new file.
+            #
+
+            $Written = 0;
+        }
+    }
+}
+
+main
+
+__END__
+
+=head1 NAME
+
+podgen
+
+A program to automatically generate documentation stubs for Perl
+programs.
+
+=head1 SYNOPSIS
+
+podgen [-hv] [-n filename] filename or stdin
+
+=head1 DESCRIPTION
+
+The podgen program automatically generates documentation stubs for Perl
+programs.  The stub generated is similar in format to the documentation
+you are currently reading, with space to describe the overall working of
+the program or module as well as descriptions of all the subroutines
+found.
+
+podgen can be invoked from the command line and given the name of an
+input file,  or the program text can be piped in on standard input.  The
+output is produced on standard output and can be redirected to a new
+file.
+
+Beware of issuing a command such as B<podgen lib.pm E<gt> lib.pm> which
+will only erase your code.  It's probably best to call podgen from
+within your editor using it as a filter.  In vi, a command such as
+C<1G!Gpodgen> should do the trick.  It is safe to filter your file in
+this way any number of times.  You should never lose any code, and no
+stubs should be generated if they already exist.  If you have added new
+subroutines documentation stubs will be added at the end of the
+documentation.
+
+If you are using podgen on a Perl module (.pm file), then I<package>
+statement will be used to get the name of the module.  If the file is a
+top level program the filename will be taken from the name on the
+command line.  If podgen is being used as a filter then it may be
+necessary to provide the name of the file using the B<-n> option.  In
+vi, the command C<1G!Gpodgen -n %> will work well.
+
+=head1 OPTIONS
+
+ -h            - show help
+ -v            - show version
+ -n filename   - specify filename of input program
+
+=head1 SUBROUTINES
+
+=head2 write_pod
+
+Parameters:
+    pod
+
+Prints $pod after stripping leading prefix.
+
+=head2 write_documentation
+
+Parameters:
+    none
+
+Prints all required pod documentation stubs.
+
+=head2 main
+
+Parameters:
+    none
+
+Main subroutine and I/O loop.
+
+=head1 FILES
+
+None.
+
+=head1 BUGS
+
+The heuristics to guess at the type of a subroutine and to determine its
+parameters and arguments are fairly simpleminded and will often be
+wrong.  As we know, only perl and parse Perl.
+
+=cut
