@@ -1,8 +1,8 @@
 #!/usr/local/bin/perl -w
 
-# Copyright 2001 by Olsen & Associates AG, Zurich, Switzerland.
+# Copyright 2001 by Olsen & Associates AG, Zürich, Switzerland.
 
-# $Id: //depot/main/products/ride2/tools/podgen#3 $
+# $Id: //depot/main/products/ride2/tools/podgen#4 $
 
 # Original author: Paul Johnson
 # Created:         Tue 09 Jan 2001 10:23:53 am
@@ -40,7 +40,7 @@ if ($Options->{help})
 
 if ($Options->{version})
 {
-    print '$Id: //depot/main/products/ride2/tools/podgen#3 $', "\n";
+    print '$Id: //depot/main/products/ride2/tools/podgen#4 $', "\n";
     exit;
 }
 
@@ -151,7 +151,7 @@ EOF
         #
 
         my $type = $sub->{constructor} ? "constructor"
-                 : $method ? "method"
+                 : $method             ? "method"
                  : "";
 
         #
@@ -231,9 +231,9 @@ EOF
     # Tidy up in case we have been called on a number of files.
     #
 
-    $Package = "";
-    @Subs = ();
-    $Pod = 0;
+    $Package     = "";
+    @Subs        = ();
+    $Pod         = 0;
     $Subroutines = 0;
 
     #
@@ -248,7 +248,7 @@ sub main
     while (<>)
     {
         #
-        # Print each lilne as we see it.
+        # Print each line as we see it.
         #
 
         print;
@@ -405,7 +405,7 @@ stubs should be generated if they already exist.  If you have added new
 subroutines documentation stubs will be added at the end of the
 documentation.
 
-If you are using podgen on a Perl module (.pm file), then I<package>
+If you are using podgen on a Perl module (.pm file), then the I<package>
 statement will be used to get the name of the module.  If the file is a
 top level program the filename will be taken from the name on the
 command line.  If podgen is being used as a filter then it may be
@@ -449,6 +449,6 @@ None.
 
 The heuristics to guess at the type of a subroutine and to determine its
 parameters and arguments are fairly simpleminded and will often be
-wrong.  As we know, only perl and parse Perl.
+wrong.  As we know, only perl can parse Perl.
 
 =cut
