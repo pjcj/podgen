@@ -1,11 +1,4 @@
-#!/usr/local/bin/perl -w
-
-# Copyright 2001 by Olsen & Associates AG, Zürich, Switzerland.
-
-# $Id: //depot/main/products/ride2/tools/podgen#4 $
-
-# Original author: Paul Johnson
-# Created:         Tue 09 Jan 2001 10:23:53 am
+#!/usr/bin/perl -w
 
 use strict;
 
@@ -30,11 +23,12 @@ die "Bad option" unless
                    help|h!
                    name|n=s
                    version|v!
+                   force|f!
                  ));
 
 if ($Options->{help})
 {
-    print "Usage: $0 [-hv] [-n filename] filename or stdin\n";
+    print "Usage: $0 [-hvf] [-n filename] filename or stdin\n";
     exit;
 }
 
@@ -50,9 +44,14 @@ if ($Options->{version})
 
 my $Package = "";     # Name of the package.
 my @Subs;             # Subroutines found.
+my @Modules;          # Modules used by this package/script
 my $Pod = 0;          # Package pod found.
 my $Subroutines = 0;  # Subroutines pod found.
 my $Written = 0;      # Documentaion written.
+my $Version = '0.01'; # Version of the module/script.
+my $Parsing = 1;      # Turn off to not parse inside POD.
+
+my $VERSION = "0.05"; # Version of this script.
 
 #
 # Subroutines
@@ -94,20 +93,25 @@ sub write_documentation
             :
             : =head1 NAME
             :
-            : $file
+            : $file - A $type to ...
             :
-            : A $type to ...
+            : =head1 VERSION
             :
-            : =head1 SYNOPSIS
+            : This documentation refers to version $Version.
             :
 EOF
-        write_pod $Package ? "use $file;" : "$file [-Dhv] options ...";
-        write_pod <<"EOF";
+#        write_pod $Package ? "use $file;" : "$file [-Dhv] options ...";
+        write_pod <<"EOF" if $Package;
+            : =head1 SYNOPSIS
             :
+            : use $file;
             :
-            : =head1 DESCRIPTION
+EOF
+        write_pod <<"EOF" unless $Package;
+            : =head1 USAGE
             :
-            : The $file $type implements ...
+            : Brief working examples of use
+            : $file [-Dhv] options ...
             :
             : =head1 OPTIONS
             :
@@ -116,9 +120,21 @@ EOF
             :  -v            - show version
             :  Other options ...
             :
-            : =head1 SUBROUTINES
+EOF
+       write_pod << "EOF";
+            : =head1 DESCRIPTION
+            :
+            : The $file $type implements ...
             :
 EOF
+       write_pod $Package ? << "EOFP" : << "EOFS";
+            : =head1 SUBROUTINES / METHODS
+            :
+EOFP
+            : =head1 SUBROUTINES
+            :
+EOFS
+
     }
 
     #
@@ -132,7 +148,7 @@ EOF
         # See if we've already got documentation for this subroutine
         #
 
-        next if $sub->{pod};
+        next if $sub->{pod} && !$Options->{force};
 
         #
         # This is probably a method if the first parameter is called $self
@@ -189,11 +205,11 @@ EOF
             :
             : ...
             :
-            : =head1 ENVIRONMENT
+            : =head1 CONFIGURATION AND ENVIRONMENT
             :
             : How the environment can affect execution of $file ...
             :
-            : =head1 EXIT STATUS
+            : =head1 DIAGNOSTICS
             :
             : The following exit values are returned:
             :
@@ -202,26 +218,50 @@ EOF
             : >0  An error occurred.
             :
 EOF
+
+# Damian-ise?
+# Also INHERITS FROM ?
+# parse out "warn/croak/carp" calls for diagnostics? (also which sub + linenumber)
+
         write_pod <<"EOF";
-            : =head1 FILES
+            : =head1 DEPENDENCIES
             :
-            : Files used by the $file $type ...
+            : Modules used, version dependencies, core yes/no
             :
-            : =head1 SEE ALSO
-            :
-            : Related information ...
-            :
-            : =head1 WARNINGS
-            :
-            : ...
-            :
+EOF
+
+        print "$_->{name}\n\n" for (@Modules);
+
+        my $me = "Unknown user";
+        my $login = $me;
+        if ($login = getlogin || eval { (getpwuid($<))[0] })
+        {
+            my $name;
+            eval { $name = (getpwnam($login))[6] };
+            $me = $name || $login;
+            $me =~ s/,*$//;
+        }
+        $login = "" unless defined $login;
+        my $year = (localtime)[5] + 1900;
+
+        write_pod << "EOF";
             : =head1 NOTES
             :
             : ...
             :
-            : =head1 BUGS
+            : =head1 BUGS AND LIMITATIONS
             :
-            : What?
+            : None known currently, please email the author if you find any.
+            :
+            : =head1 AUTHOR
+            :
+            : $me ($login\@domain.tld)
+            :
+            : =head1 LICENCE
+            :
+            : Copyright $year by $me.
+            :
+            : This software is free.  It is licensed under the same terms as Perl itself.
             :
             : =cut
 EOF
@@ -258,77 +298,105 @@ sub main
         # Look for the package name.
         #
 
-        if (/^\s*package\s+([\w:]+)\s*;\s*$/)
+        if($Parsing)
         {
-            $Package = $1;
-        }
+            if (/^\s*package\s+([\w:]+)\s*;\s*$/)
+            {
+                $Package = $1;
+            }
 
-        #
-        # Look for a subroutine name.
-        #
-
-        if (/^\s*sub\s+((?!\d)\w+)(\s*\([\$;]*\))?\s*\{?\s*$/)
-        {
-            push @Subs, { name => $1, params => [] };
-        }
-
-        #
-        # Look for shifted parameters.
-        #
-
-        if (/my\s*\$(\w+)\s*=\s*shift\s*(?:;|\|\|)/)
-        {
-            push @{$Subs[-1]{params}}, $1;
-        }
-
-        #
-        # Look for parameters copied from @_.
-        #
-
-        if (my ($p) = /\bmy\s*\(\s*((?:\$\w+\s*,?\s*)+)\)\s*=\s*\@_/)
-        {
-            $p =~ s/(\$|\s)//g;
-            push @{$Subs[-1]{params}}, split /,/, $p;
-        }
-
-        #
-        # Look for operations on @_ - reading and writing.
-        #
-
-        while (@Subs && /(\$_\[\s*\d+\s*\](?:\s*=)?)/g)
-        {
             #
-            # The check for writing is really not very good.
-            # It fails for $_[0] =~ //; and for $_[0]++; for example.
+            # Grab the version
             #
 
-            $1 =~ /(\d+)\s*\](\s*=)?/;
-            $Subs[-1]{args}[$1] ||= $2;
+            if (/^\s*\$(?:my\s+)?(?:$Package[:]*)?VERSION\s*=.*?([0-9.]+)/)
+            {
+                $Version = $1 || "0.01";
+            }
+
+            #
+            # Look for module names
+            # Only gets plain "use .. " or "require" statements,
+            # nothing done in code
+            #
+
+            if (/^\s*(?:use|require)\s+([\w:]+)\s*;\s*$/)
+            {
+                push(@Modules, { name => $1 });
+            }
+
+            #
+            # Look for a subroutine name.
+            #
+
+            if (/^\s*sub\s+((?!\d)\w+)(\s*\([\$;]*\))?\s*\{?\s*/)
+            {
+                push @Subs, { name => $1, params => [] };
+            }
+
+            #
+            # Look for shifted parameters.
+            #
+
+            if (/my\s*\$(\w+)\s*=\s*shift\s*(?:;|\|\|)/)
+            {
+                push @{$Subs[-1]{params}}, $1;
+            }
+
+            #
+            # Look for parameters copied from @_.
+            #
+
+            if (my ($p) = /\bmy\s*\(\s*((?:\$\w+\s*,?\s*)+)\)\s*=\s*\@_/)
+            {
+                $p =~ s/(\$|\s)//g;
+                push @{$Subs[-1]{params}}, split /,/, $p;
+            }
+
+            #
+            # Look for operations on @_ - reading and writing.
+            #
+
+            while (@Subs && /(\$_\[\s*\d+\s*\](?:\s*=)?)/g)
+            {
+                #
+                # The check for writing is really not very good.
+                # It fails for $_[0] =~ //; and for $_[0]++; for example.
+                #
+
+                $1 =~ /(\d+)\s*\](\s*=)?/;
+                $Subs[-1]{args}[$1] ||= $2;
+            }
+
+            #
+            # If we're blessing we're probably in a constructor.
+            #
+
+            if (/\bbless\b/)
+            {
+                $Subs[-1]->{constructor} = 1;
+            }
         }
-
-        #
-        # If we're blessing we're probably in a constructor.
-        #
-
-        if (/\bbless\b/)
-        {
-            $Subs[-1]->{constructor} = 1;
-        }
-
         #
         # Look for package documentation.
         #
 
         if (/^=head1/)
         {
-            $Pod = 1;
+            $Pod = 1 unless $Options->{force};
+            $Parsing = 0;
+        }
+
+        if (/^(?:=cut|=end)/)
+        {
+            $Parsing = 1;
         }
 
         #
         # Look for start of subroutine documentation.
         #
 
-        if (/^=head1 SUBROUTINES$/)
+        if (/^=head1 SUBROUTINES/)
         {
             $Subroutines = 1;
         }
@@ -349,6 +417,7 @@ sub main
 
         if (/^=head2 (\w+)(?: \(\w+\))?$/)
         {
+            $Parsing = 0;
             if (my ($s) = grep { $_->{name} eq $1 } @Subs)
             {
                 $s->{pod} = 1;
@@ -374,14 +443,23 @@ __END__
 
 =head1 NAME
 
-podgen
-
-A program to automatically generate documentation stubs for Perl
+podgen - A program to automatically generate documentation stubs for Perl
 programs.
 
-=head1 SYNOPSIS
+=head1 VERSION
 
-podgen [-hv] [-n filename] filename or stdin
+This documentation refers to version 0.05.
+
+=head1 USAGE
+
+podgen [-hvf] [-n filename] filename or stdin
+
+=head1 OPTIONS
+
+ -h            - show help
+ -v            - show version
+ -f            - force POD output, even if POD is detected in the file
+ -n filename   - specify filename of input program
 
 =head1 DESCRIPTION
 
@@ -412,12 +490,6 @@ command line.  If podgen is being used as a filter then it may be
 necessary to provide the name of the file using the B<-n> option.  In
 vi, the command C<1G!Gpodgen -n %> will work well.
 
-=head1 OPTIONS
-
- -h            - show help
- -v            - show version
- -n filename   - specify filename of input program
-
 =head1 SUBROUTINES
 
 =head2 write_pod
@@ -441,14 +513,41 @@ Parameters:
 
 Main subroutine and I/O loop.
 
-=head1 FILES
+=head1 DIAGNOSTICS
 
-None.
+The following exit values are returned:
 
-=head1 BUGS
+0   All input files were processed successfully.
+
+>0  An error occurred.
+
+=head1 DEPENDENCIES
+
+strict
+
+Getopt::Long
+
+=head1 BUGS AND LIMITATIONS
 
 The heuristics to guess at the type of a subroutine and to determine its
 parameters and arguments are fairly simpleminded and will often be
 wrong.  As we know, only perl can parse Perl.
+
+=head1 AUTHOR
+
+Paul Johnson - paul@pjcj.net   Tue 09 Jan 2001 10:23:53 am
+
+Jess Robinson - Changes to bring things into line with Damian Conway's Perl
+Best Practices book.  See http://www.oreilly.com/catalog/perlbp/
+
+=head1 LICENCE
+
+Copyright 2001 by Olsen & Associates AG, Zürich, Switzerland.
+Copyright 2005 by Paul Johnson.
+
+This software is free.  It is licensed under the same terms as Perl itself.
+
+The latest version of this software should be available from my homepage:
+http://www.pjcj.net
 
 =cut
