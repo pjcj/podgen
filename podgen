@@ -335,6 +335,15 @@ sub main
             }
 
             #
+            # Look for anonymous subroutines
+            #
+
+            if (/\bsub\s*\{/)
+            {
+                push @Subs, { name => undef, params => [] };
+            }
+
+            #
             # Look for shifted parameters.
             #
 
@@ -426,6 +435,7 @@ sub main
 
         if (eof)
         {
+            @Subs = grep { $_->{name} } @Subs;
             write_documentation;
 
             #
