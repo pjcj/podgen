@@ -6,6 +6,8 @@ require 5.004_04;
 
 use Getopt::Long;
 
+my $VERSION = "0.05";  # Version of this script.
+
 #
 # Parse and process options.
 #
@@ -18,7 +20,7 @@ my $Options =
 };
 
 die "Bad option" unless
-    GetOptions($Options,                 # store the options in the Options hash
+    GetOptions($Options, # store the options in the Options hash
                qw(
                    help|h!
                    name|n=s
@@ -34,7 +36,7 @@ if ($Options->{help})
 
 if ($Options->{version})
 {
-    print '$Id: //depot/main/products/ride2/tools/podgen#4 $', "\n";
+    print "$VERSION\n";
     exit;
 }
 
@@ -50,8 +52,6 @@ my $Subroutines = 0;  # Subroutines pod found.
 my $Written = 0;      # Documentaion written.
 my $Version = '0.01'; # Version of the module/script.
 my $Parsing = 1;      # Turn off to not parse inside POD.
-
-my $VERSION = "0.05"; # Version of this script.
 
 #
 # Subroutines
