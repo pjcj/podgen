@@ -6,7 +6,7 @@ require 5.004_04;
 
 use Getopt::Long;
 
-my $VERSION = "0.05";  # Version of this script.
+my $VERSION = "0.06";  # Version of this script.
 
 #
 # Parse and process options.
